@@ -29,7 +29,7 @@ const SenderName = styled.div`
 const ChatBubble = ({ message, isUser }) => {
   return (
     <BubbleContainer isUser={isUser}>
-      <SenderName isUser={isUser}>{isUser ? 'Anda' : 'AI Assistant'}</SenderName>
+      <SenderName isUser={isUser}>{isUser ? 'Anda' : 'Jagoan Bisnis AI'}</SenderName>
       <Bubble isUser={isUser}>{message}</Bubble>
     </BubbleContainer>
   );
