@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import ChatBubble from './ChatBubble';
-import CategorySelection from './CategorySelection';
 import ApiKeyInput from './ApiKeyInput';
 import deepseekService from '../services/deepseekService';
 import knowledgeBaseUtils from '../utils/knowledgeBaseUtils';
@@ -110,10 +109,30 @@ const UsedCategoriesContainer = styled.div`
   flex-wrap: wrap;
 `;
 
+const UserInfoBadge = styled.div`
+  display: inline-block;
+  background-color: #f0f8ff;
+  color: #4a90e2;
+  padding: 0.3rem 0.6rem;
+  border-radius: 15px;
+  font-size: 0.9rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #c5dcf7;
+`;
+
+const UserInfoContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  background-color: #fafafa;
+  border-radius: 5px;
+`;
+
 const Chatbot = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem('deepseek_api_key') || '');
   const [categoryStats, setCategoryStats] = useState(
@@ -123,6 +142,9 @@ const Chatbot = () => {
     }, {})
   );
   const [usedCategories, setUsedCategories] = useState([]);
+  const [userName, setUserName] = useState('');
+  const [userBusiness, setUserBusiness] = useState('');
+  const [conversationStage, setConversationStage] = useState('welcome');
   
   const chatBodyRef = useRef(null);
 
@@ -140,16 +162,94 @@ const Chatbot = () => {
     localStorage.setItem('deepseek_api_key', defaultApiKey);
     setApiKey(defaultApiKey);
     
+    // Load user info from local storage if available
+    const savedUserName = localStorage.getItem('user_name');
+    const savedUserBusiness = localStorage.getItem('user_business');
+    
+    if (savedUserName) {
+      setUserName(savedUserName);
+    }
+    
+    if (savedUserBusiness) {
+      setUserBusiness(savedUserBusiness);
+    }
+    
     // Only set welcome message if messages is empty
     if (messages.length === 0) {
       setMessages([
         {
-          text: 'Selamat datang di Chatbot Interaktif! Silakan pilih kategori untuk memulai percakapan atau langsung ajukan pertanyaan untuk mendapatkan rekomendasi bisnis dari basis pengetahuan kami.',
+          text: 'Selamat datang di Chatbot Interaktif! Saya di sini untuk membantu Anda dengan rekomendasi bisnis yang personal.',
           isUser: false,
         },
       ]);
+      
+      // If we don't have user's name, set conversation stage to ask for name
+      if (!savedUserName) {
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            text: 'Sebelum kita mulai, boleh saya tahu nama Anda?',
+            isUser: false
+          }]);
+          setConversationStage('asking_name');
+        }, 1000);
+      } else if (!savedUserBusiness) {
+        // If we have name but no business info
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            text: `Senang bertemu dengan Anda, ${savedUserName}! Boleh tahu Anda memiliki bisnis di bidang apa?`,
+            isUser: false
+          }]);
+          setConversationStage('asking_business');
+        }, 1000);
+      } else {
+        // If we have all user info
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            text: `Senang bertemu kembali, ${savedUserName}! Apa yang ingin Anda ketahui tentang bisnis ${savedUserBusiness} Anda hari ini?`,
+            isUser: false
+          }]);
+          setConversationStage('ready');
+        }, 1000);
+      }
     }
   }, []);
+
+  // Extract just the name from user input
+  const extractName = (input) => {
+    // Remove common prefixes that users might include
+    const cleanInput = input.trim()
+      .replace(/^nama saya/i, '')
+      .replace(/^saya/i, '')
+      .replace(/^halo,?\s*/i, '')
+      .replace(/^hai,?\s*/i, '')
+      .replace(/^hi,?\s*/i, '')
+      .replace(/^perkenalkan/i, '')
+      .replace(/^kenalkan/i, '')
+      .trim();
+    
+    // If the input contains multiple words, take only the first 2-3 words as the name
+    const words = cleanInput.split(/\s+/);
+    if (words.length > 3) {
+      return words.slice(0, 2).join(' ');
+    }
+    
+    return cleanInput;
+  };
+
+  // Extract business type from user input
+  const extractBusiness = (input) => {
+    // Remove common prefixes
+    const cleanInput = input.trim()
+      .replace(/^bisnis saya/i, '')
+      .replace(/^usaha saya/i, '')
+      .replace(/^saya punya bisnis/i, '')
+      .replace(/^saya memiliki bisnis/i, '')
+      .replace(/^saya bekerja di/i, '')
+      .replace(/^saya di bidang/i, '')
+      .trim();
+    
+    return cleanInput;
+  };
 
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
@@ -161,54 +261,80 @@ const Chatbot = () => {
     setIsLoading(true);
 
     try {
-      // If no category is selected, use the smart category detection
-      if (!selectedCategory) {
-        const response = await fetchResponseWithSmartCategoryDetection(input);
-        setMessages((prev) => [...prev, { 
-          text: response.text, 
-          isUser: false,
-          categories: response.categories 
-        }]);
+      // Handle different conversation stages
+      if (conversationStage === 'asking_name') {
+        // Extract and save user name
+        const name = extractName(input.trim());
+        setUserName(name);
+        localStorage.setItem('user_name', name);
         
-        // Update used categories
-        setUsedCategories(prev => {
-          const newCategories = [...prev];
-          response.categories.forEach(cat => {
-            if (!newCategories.includes(cat)) {
-              newCategories.push(cat);
-            }
-          });
-          return newCategories;
-        });
-        
-        // Update category stats
-        const updatedStats = {...categoryStats};
-        response.categories.forEach(category => {
-          updatedStats[category] = (updatedStats[category] || 0) + 1;
-        });
-        setCategoryStats(updatedStats);
-      } else {
-        // Update category stats for selected category
-        setCategoryStats((prev) => ({
-          ...prev,
-          [selectedCategory]: prev[selectedCategory] + 1,
-        }));
-        
-        // Use the selected category
-        setTimeout(async () => {
-          const response = await fetchResponse(input, selectedCategory);
-          setMessages((prev) => [...prev, { 
-            text: response, 
-            isUser: false,
-            categories: [selectedCategory]
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            text: `Senang bertemu dengan Anda, ${name}! Boleh tahu Anda memiliki bisnis di bidang apa?`,
+            isUser: false
           }]);
-          
-          // Update used categories if not already included
-          if (!usedCategories.includes(selectedCategory)) {
-            setUsedCategories(prev => [...prev, selectedCategory]);
-          }
-        }, 500);
+          setConversationStage('asking_business');
+          setIsLoading(false);
+        }, 1000);
+        return;
+      } 
+      else if (conversationStage === 'asking_business') {
+        // Extract and save user business
+        const business = extractBusiness(input.trim());
+        setUserBusiness(business);
+        localStorage.setItem('user_business', business);
+        
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            text: `Terima kasih! Sekarang saya dapat memberikan rekomendasi yang lebih personal untuk bisnis ${business} Anda. Apa yang ingin Anda ketahui?`,
+            isUser: false
+          }]);
+          setConversationStage('ready');
+          setIsLoading(false);
+        }, 1000);
+        return;
       }
+      
+      // For normal conversation, use smart category detection
+      let enhancedQuery = input;
+      
+      // Add context about user's business if available
+      if (userBusiness) {
+        enhancedQuery = `${input} (Konteks: Bisnis saya adalah di bidang ${userBusiness})`;
+      }
+      
+      const response = await fetchResponseWithSmartCategoryDetection(enhancedQuery);
+      
+      // Check if response contains questions about user info
+      const responseText = personalizeResponse(response.text);
+      
+      setMessages((prev) => [...prev, { 
+        text: responseText, 
+        isUser: false,
+        categories: response.categories 
+      }]);
+      
+      // Update used categories
+      setUsedCategories(prev => {
+        const newCategories = [...prev];
+        response.categories.forEach(cat => {
+          if (!newCategories.includes(cat)) {
+            newCategories.push(cat);
+          }
+        });
+        return newCategories;
+      });
+      
+      // Update category stats
+      const updatedStats = {...categoryStats};
+      response.categories.forEach(category => {
+        updatedStats[category] = (updatedStats[category] || 0) + 1;
+      });
+      setCategoryStats(updatedStats);
+      
+      // Check if we should ask follow-up questions
+      checkForFollowUpQuestions(input);
+      
     } catch (error) {
       console.error('Error fetching response:', error);
       setMessages((prev) => [
@@ -217,6 +343,53 @@ const Chatbot = () => {
       ]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const personalizeResponse = (text) => {
+    // Personalize response with user's name and business if available
+    let personalizedText = text;
+    
+    if (userName) {
+      // Replace generic terms with personalized ones
+      personalizedText = personalizedText.replace(/Anda dapat/g, `${userName} dapat`);
+      personalizedText = personalizedText.replace(/Anda harus/g, `${userName} sebaiknya`);
+      personalizedText = personalizedText.replace(/Anda perlu/g, `${userName} perlu`);
+    }
+    
+    if (userBusiness) {
+      // Add specific business context to recommendations
+      personalizedText = personalizedText.replace(/bisnis Anda/g, `bisnis ${userBusiness} Anda`);
+      personalizedText = personalizedText.replace(/perusahaan Anda/g, `${userBusiness} Anda`);
+    }
+    
+    return personalizedText;
+  };
+
+  const checkForFollowUpQuestions = (userQuery) => {
+    // Check if we should ask follow-up questions based on user query
+    const query = userQuery.toLowerCase();
+    
+    // If user hasn't specified their business type in detail
+    if (userBusiness && userBusiness.length < 10 && 
+        (query.includes('bisnis') || query.includes('usaha') || query.includes('perusahaan'))) {
+      setTimeout(() => {
+        setMessages(prev => [...prev, {
+          text: `Untuk memberikan rekomendasi yang lebih spesifik, boleh saya tahu lebih detail tentang bisnis ${userBusiness} Anda? Misalnya, skala bisnis, jumlah karyawan, atau target pasar Anda?`,
+          isUser: false
+        }]);
+      }, 2000);
+    }
+    
+    // If query is about starting a business but we don't have details
+    if ((query.includes('mulai') || query.includes('memulai') || query.includes('baru')) && 
+        query.includes('bisnis') && (!userBusiness || userBusiness.length < 5)) {
+      setTimeout(() => {
+        setMessages(prev => [...prev, {
+          text: 'Bisnis apa yang ingin Anda mulai? Semakin spesifik informasi yang Anda berikan, semakin tepat rekomendasi yang dapat saya berikan.',
+          isUser: false
+        }]);
+      }, 2000);
     }
   };
 
@@ -249,45 +422,42 @@ const Chatbot = () => {
     }
   };
 
-  const fetchResponse = async (query, category) => {
-    try {
-      // Load knowledge base content for the selected category
-      const knowledgeBaseContent = await knowledgeBaseUtils.loadKnowledgeBase(category);
-      
-      // Use DeepSeek service
-      const aiResponse = await deepseekService.getResponse(query, category, knowledgeBaseContent);
-      return aiResponse;
-    } catch (error) {
-      console.error('Error fetching response:', error);
-      return "Maaf, terjadi kesalahan saat mencari informasi. Silakan coba lagi nanti.";
-    }
-  };
-
-  const handleCategorySelect = (category) => {
-    setSelectedCategory(category);
-    setMessages((prev) => [
-      ...prev,
-      {
-        text: `Anda telah memilih kategori ${category}. Silakan ajukan pertanyaan Anda.`,
-        isUser: false,
-      },
-    ]);
-  };
-
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
       handleSendMessage();
     }
   };
 
+  const resetUserInfo = () => {
+    localStorage.removeItem('user_name');
+    localStorage.removeItem('user_business');
+    setUserName('');
+    setUserBusiness('');
+    setConversationStage('asking_name');
+    setMessages([
+      {
+        text: 'Informasi pengguna telah direset. Boleh saya tahu nama Anda?',
+        isUser: false,
+      },
+    ]);
+  };
+
   return (
     <ChatbotContainer>
       <ChatHeader>Chatbot Interaktif</ChatHeader>
       
-      <CategorySelection 
-        onSelectCategory={handleCategorySelect} 
-        selectedCategory={selectedCategory} 
-      />
+      {(userName || userBusiness) && (
+        <UserInfoContainer>
+          {userName && <UserInfoBadge>Nama: {userName}</UserInfoBadge>}
+          {userBusiness && <UserInfoBadge>Bisnis: {userBusiness}</UserInfoBadge>}
+          <UserInfoBadge 
+            onClick={resetUserInfo} 
+            style={{cursor: 'pointer', backgroundColor: '#fff0f0', color: '#e57373', borderColor: '#ffcdd2'}}
+          >
+            Reset Info
+          </UserInfoBadge>
+        </UserInfoContainer>
+      )}
       
       <ChatBody ref={chatBodyRef}>
         {messages.map((message, index) => (
@@ -311,7 +481,11 @@ const Chatbot = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Ketik pesan Anda di sini..."
+          placeholder={
+            conversationStage === 'asking_name' ? 'Ketik nama Anda di sini...' :
+            conversationStage === 'asking_business' ? 'Ketik jenis bisnis Anda di sini...' :
+            'Ketik pertanyaan bisnis Anda di sini...'
+          }
         />
         <SendButton 
           onClick={handleSendMessage} 
@@ -322,7 +496,7 @@ const Chatbot = () => {
       </ChatFooter>
       
       <ChatStats>
-        <StatsTitle>Statistik Percakapan</StatsTitle>
+        <StatsTitle>Statistik Kategori</StatsTitle>
         {Object.entries(categoryStats)
           .filter(([_, count]) => count > 0)
           .sort(([_, countA], [__, countB]) => countB - countA)

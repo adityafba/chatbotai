@@ -5,6 +5,9 @@ import config from '../config';
 const DEFAULT_API_URL = config.deepseek.apiUrl;
 const DEFAULT_API_KEY = config.deepseek.apiKey;
 
+// Maximum number of retries for API calls
+const MAX_RETRIES = 100;
+
 // Function to generate fallback responses based on knowledge base
 const generateFallbackResponse = (query, category, knowledgeBase) => {
   // Extract relevant content from the knowledge base
@@ -44,22 +47,57 @@ const generateFallbackResponse = (query, category, knowledgeBase) => {
     relevantContent = knowledgeBase.substring(0, Math.min(800, knowledgeBase.length));
   }
   
+  // Extract key points from relevant content
+  const lines = relevantContent.split('\n').filter(line => line.trim().length > 0);
+  const keyPoints = lines
+    .filter(line => line.length > 30 && !line.startsWith('#'))
+    .slice(0, 3)
+    .map(line => line.trim());
+  
   // Create a structured response based on the knowledge base
   return `
-## Informasi ${category}
+## Rekomendasi ${category}
 
-${relevantContent}
+${keyPoints.map(point => `• ${point}`).join('\n\n')}
 
 ### Kesimpulan
 
-Berdasarkan informasi di atas, kami dapat menyimpulkan beberapa poin penting terkait pertanyaan Anda tentang "${query}":
+Berdasarkan informasi dari basis pengetahuan kami, berikut rekomendasi untuk "${query}":
 
-1. ${category} memiliki aspek penting yang perlu diperhatikan sesuai konteks pertanyaan Anda.
-2. Informasi dari basis pengetahuan kami memberikan panduan awal untuk memahami topik ini.
-3. Untuk informasi lebih detail, kami sarankan untuk melihat sumber referensi terkait ${category}.
+• ${keyPoints[0] || 'Terapkan prinsip-prinsip dasar ' + category + ' untuk hasil optimal.'}
 
 *Catatan: Ini adalah respons alternatif karena terjadi kendala teknis saat menghubungi sistem AI kami.*
 `;
+};
+
+// Function to make API request with retries
+const makeApiRequestWithRetry = async (apiUrl, requestBody, requestConfig, retryCount = 0) => {
+  try {
+    console.log(`API request attempt ${retryCount + 1} of ${MAX_RETRIES + 1}`);
+    return await axios.post(apiUrl, requestBody, requestConfig);
+  } catch (error) {
+    // If we've reached max retries or it's not a timeout error, throw the error
+    if (retryCount >= MAX_RETRIES || 
+        !(error.code === 'ECONNABORTED' || error.message.includes('timeout'))) {
+      throw error;
+    }
+    
+    // Exponential backoff - wait longer between each retry
+    const waitTime = 1000 * Math.pow(2, retryCount);
+    console.log(`API request timed out. Retrying in ${waitTime/1000} seconds...`);
+    
+    // Wait before retrying
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+    
+    // Retry with increased timeout
+    const newConfig = {
+      ...requestConfig,
+      timeout: requestConfig.timeout + 10000 // Add 10 seconds for each retry
+    };
+    
+    // Try again with incremented retry count
+    return makeApiRequestWithRetry(apiUrl, requestBody, newConfig, retryCount + 1);
+  }
 };
 
 const getResponse = async (query, category, knowledgeBase) => {
@@ -78,17 +116,19 @@ const getResponse = async (query, category, knowledgeBase) => {
 
 Basis pengetahuan: ${knowledgeBase}
 
-Panduan:
+Panduan format respons:
 1. UTAMAKAN informasi dari basis pengetahuan sebagai sumber utama jawaban Anda. Jangan memberikan informasi yang bertentangan dengan basis pengetahuan.
 2. Kembangkan jawaban dengan pengetahuan umum Anda tentang ${category} untuk membuat jawaban lebih komprehensif.
-3. Berikan contoh praktis, studi kasus, dan statistik yang relevan untuk mendukung jawaban.
-4. Strukturkan jawaban dengan heading, sub-heading, poin-poin, dan paragraf yang jelas.
-5. Gunakan format yang mudah dibaca seperti bullet points, numbering, dan penekanan pada kata kunci.
-6. Berikan minimal 3-5 poin utama dalam jawaban Anda.
-7. Berikan kesimpulan dan rekomendasi praktis di akhir jawaban yang dapat langsung diterapkan oleh pengguna.
-8. Jawaban harus detail, informatif, dan bermanfaat bagi pengguna bisnis.
-9. Sertakan tips implementasi dan langkah-langkah konkret yang dapat diambil pengguna.
-10. Jika relevan, berikan contoh sukses dari bisnis yang menerapkan konsep yang dibahas.`
+3. SANGAT PENTING: Buat jawaban RINGKAS dan PADAT, maksimal 3-4 paragraf saja.
+4. Gunakan format yang mudah dibaca:
+   - Judul utama dengan heading H2 (##)
+   - Poin-poin utama dengan bullet points (•)
+   - Penekanan pada kata kunci dengan bold (**)
+5. Berikan maksimal 3-5 poin utama dalam jawaban Anda, tidak perlu lebih.
+6. Hindari teks yang terlalu panjang dan bertele-tele. Fokus pada informasi penting saja.
+7. Akhiri dengan kesimpulan singkat 1-2 kalimat dan rekomendasi praktis yang dapat langsung diterapkan.
+8. Jangan gunakan jargon teknis yang rumit. Gunakan bahasa yang sederhana dan mudah dipahami.
+9. Jika relevan, berikan 1 contoh konkret atau studi kasus singkat.`
         },
         {
           role: 'user',
@@ -108,7 +148,7 @@ Panduan:
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      timeout: 30000 // Increased timeout to 30 seconds
+      timeout: 45000 // Increased timeout to 45 seconds
     };
 
     console.log('Making API request to DeepSeek');
@@ -116,8 +156,8 @@ Panduan:
     console.log(`Using API Key: ${apiKey.substring(0, 10)}...`);
     console.log(`Request body: ${JSON.stringify(requestBody, null, 2).substring(0, 300)}...`);
     
-    // Make the API request
-    const response = await axios.post(apiUrl, requestBody, requestConfig);
+    // Make the API request with retry capability
+    const response = await makeApiRequestWithRetry(apiUrl, requestBody, requestConfig);
     
     console.log('Response received from DeepSeek API');
     console.log(`Status: ${response.status}`);
