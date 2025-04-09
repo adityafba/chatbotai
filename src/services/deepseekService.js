@@ -6,7 +6,7 @@ const DEFAULT_API_URL = config.deepseek.apiUrl;
 const DEFAULT_API_KEY = config.deepseek.apiKey;
 
 // Maximum number of retries for API calls
-const MAX_RETRIES = 100;
+const MAX_RETRIES = 2;
 
 // Function to generate fallback responses based on knowledge base
 const generateFallbackResponse = (query, category, knowledgeBase) => {
@@ -100,19 +100,17 @@ const makeApiRequestWithRetry = async (apiUrl, requestBody, requestConfig, retry
   }
 };
 
-const getResponse = async (query, category, knowledgeBase) => {
+const getResponse = async (query, category, knowledgeBase, conversationHistory = []) => {
   if (!query) {
     return 'Silakan masukkan pertanyaan Anda.';
   }
 
   try {
-    // Create the request body for DeepSeek API
-    const requestBody = {
-      model: config.deepseek.model || 'deepseek-chat',
-      messages: [
-        {
-          role: 'system',
-          content: `Anda adalah asisten AI yang ahli dalam bidang bisnis, khususnya ${category}. Jawaban Anda harus SELALU berdasarkan informasi dari basis pengetahuan yang diberikan, kemudian kembangkan dengan pengetahuan umum Anda untuk memberikan jawaban yang komprehensif.
+    // Create messages array with system message and conversation history
+    const messages = [
+      {
+        role: 'system',
+        content: `Anda adalah asisten AI yang ahli dalam bidang bisnis, khususnya ${category}. Jawaban Anda harus SELALU berdasarkan informasi dari basis pengetahuan yang diberikan, kemudian kembangkan dengan pengetahuan umum Anda untuk memberikan jawaban yang komprehensif.
 
 Basis pengetahuan: ${knowledgeBase}
 
@@ -128,13 +126,25 @@ Panduan format respons:
 6. Hindari teks yang terlalu panjang dan bertele-tele. Fokus pada informasi penting saja.
 7. Akhiri dengan kesimpulan singkat 1-2 kalimat dan rekomendasi praktis yang dapat langsung diterapkan.
 8. Jangan gunakan jargon teknis yang rumit. Gunakan bahasa yang sederhana dan mudah dipahami.
-9. Jika relevan, berikan 1 contoh konkret atau studi kasus singkat.`
-        },
-        {
-          role: 'user',
-          content: query
-        }
-      ],
+9. Jika relevan, berikan 1 contoh konkret atau studi kasus singkat.
+10. PENTING: Jawaban Anda harus berkaitan dengan pertanyaan terbaru pengguna, tetapi juga mempertimbangkan konteks dari percakapan sebelumnya.`
+      }
+    ];
+    
+    // Add conversation history (limit to last 5 exchanges to keep context manageable)
+    const recentHistory = conversationHistory.slice(-10);
+    messages.push(...recentHistory);
+    
+    // Add current user query
+    messages.push({
+      role: 'user',
+      content: query
+    });
+
+    // Create the request body for DeepSeek API
+    const requestBody = {
+      model: config.deepseek.model || 'deepseek-chat',
+      messages: messages,
       max_tokens: 800
     };
 

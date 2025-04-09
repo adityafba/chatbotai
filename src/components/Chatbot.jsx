@@ -145,6 +145,7 @@ const Chatbot = () => {
   const [userName, setUserName] = useState('');
   const [userBusiness, setUserBusiness] = useState('');
   const [conversationStage, setConversationStage] = useState('welcome');
+  const [conversationHistory, setConversationHistory] = useState([]);
   
   const chatBodyRef = useRef(null);
 
@@ -176,38 +177,45 @@ const Chatbot = () => {
     
     // Only set welcome message if messages is empty
     if (messages.length === 0) {
-      setMessages([
-        {
-          text: 'Selamat datang di Chatbot Interaktif! Saya di sini untuk membantu Anda dengan rekomendasi bisnis yang personal.',
-          isUser: false,
-        },
-      ]);
+      const welcomeMessage = {
+        text: 'Selamat datang di Chatbot Interaktif! Saya di sini untuk membantu Anda dengan rekomendasi bisnis yang personal.',
+        isUser: false,
+      };
+      
+      setMessages([welcomeMessage]);
+      setConversationHistory([{ role: 'assistant', content: welcomeMessage.text }]);
       
       // If we don't have user's name, set conversation stage to ask for name
       if (!savedUserName) {
         setTimeout(() => {
-          setMessages(prev => [...prev, {
+          const nameQuestion = {
             text: 'Sebelum kita mulai, boleh saya tahu nama Anda?',
             isUser: false
-          }]);
+          };
+          setMessages(prev => [...prev, nameQuestion]);
+          setConversationHistory(prev => [...prev, { role: 'assistant', content: nameQuestion.text }]);
           setConversationStage('asking_name');
         }, 1000);
       } else if (!savedUserBusiness) {
         // If we have name but no business info
         setTimeout(() => {
-          setMessages(prev => [...prev, {
+          const businessQuestion = {
             text: `Senang bertemu dengan Anda, ${savedUserName}! Boleh tahu Anda memiliki bisnis di bidang apa?`,
             isUser: false
-          }]);
+          };
+          setMessages(prev => [...prev, businessQuestion]);
+          setConversationHistory(prev => [...prev, { role: 'assistant', content: businessQuestion.text }]);
           setConversationStage('asking_business');
         }, 1000);
       } else {
         // If we have all user info
         setTimeout(() => {
-          setMessages(prev => [...prev, {
+          const readyMessage = {
             text: `Senang bertemu kembali, ${savedUserName}! Apa yang ingin Anda ketahui tentang bisnis ${savedUserBusiness} Anda hari ini?`,
             isUser: false
-          }]);
+          };
+          setMessages(prev => [...prev, readyMessage]);
+          setConversationHistory(prev => [...prev, { role: 'assistant', content: readyMessage.text }]);
           setConversationStage('ready');
         }, 1000);
       }
@@ -257,6 +265,7 @@ const Chatbot = () => {
     // Add user message
     const userMessage = { text: input, isUser: true };
     setMessages((prev) => [...prev, userMessage]);
+    setConversationHistory(prev => [...prev, { role: 'user', content: input }]);
     setInput('');
     setIsLoading(true);
 
@@ -269,10 +278,12 @@ const Chatbot = () => {
         localStorage.setItem('user_name', name);
         
         setTimeout(() => {
-          setMessages(prev => [...prev, {
+          const nameResponse = {
             text: `Senang bertemu dengan Anda, ${name}! Boleh tahu Anda memiliki bisnis di bidang apa?`,
             isUser: false
-          }]);
+          };
+          setMessages(prev => [...prev, nameResponse]);
+          setConversationHistory(prev => [...prev, { role: 'assistant', content: nameResponse.text }]);
           setConversationStage('asking_business');
           setIsLoading(false);
         }, 1000);
@@ -285,10 +296,12 @@ const Chatbot = () => {
         localStorage.setItem('user_business', business);
         
         setTimeout(() => {
-          setMessages(prev => [...prev, {
+          const businessResponse = {
             text: `Terima kasih! Sekarang saya dapat memberikan rekomendasi yang lebih personal untuk bisnis ${business} Anda. Apa yang ingin Anda ketahui?`,
             isUser: false
-          }]);
+          };
+          setMessages(prev => [...prev, businessResponse]);
+          setConversationHistory(prev => [...prev, { role: 'assistant', content: businessResponse.text }]);
           setConversationStage('ready');
           setIsLoading(false);
         }, 1000);
@@ -307,6 +320,8 @@ const Chatbot = () => {
       
       // Check if response contains questions about user info
       const responseText = personalizeResponse(response.text);
+      
+      setConversationHistory(prev => [...prev, { role: 'assistant', content: responseText }]);
       
       setMessages((prev) => [...prev, { 
         text: responseText, 
@@ -337,10 +352,12 @@ const Chatbot = () => {
       
     } catch (error) {
       console.error('Error fetching response:', error);
-      setMessages((prev) => [
-        ...prev,
-        { text: 'Maaf, terjadi kesalahan. Silakan coba lagi.', isUser: false },
-      ]);
+      const errorMessage = { 
+        text: 'Maaf, terjadi kesalahan. Silakan coba lagi.', 
+        isUser: false 
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+      setConversationHistory(prev => [...prev, { role: 'assistant', content: errorMessage.text }]);
     } finally {
       setIsLoading(false);
     }
@@ -374,10 +391,12 @@ const Chatbot = () => {
     if (userBusiness && userBusiness.length < 10 && 
         (query.includes('bisnis') || query.includes('usaha') || query.includes('perusahaan'))) {
       setTimeout(() => {
-        setMessages(prev => [...prev, {
+        const followUpQuestion = {
           text: `Untuk memberikan rekomendasi yang lebih spesifik, boleh saya tahu lebih detail tentang bisnis ${userBusiness} Anda? Misalnya, skala bisnis, jumlah karyawan, atau target pasar Anda?`,
           isUser: false
-        }]);
+        };
+        setMessages(prev => [...prev, followUpQuestion]);
+        setConversationHistory(prev => [...prev, { role: 'assistant', content: followUpQuestion.text }]);
       }, 2000);
     }
     
@@ -385,10 +404,12 @@ const Chatbot = () => {
     if ((query.includes('mulai') || query.includes('memulai') || query.includes('baru')) && 
         query.includes('bisnis') && (!userBusiness || userBusiness.length < 5)) {
       setTimeout(() => {
-        setMessages(prev => [...prev, {
+        const startupQuestion = {
           text: 'Bisnis apa yang ingin Anda mulai? Semakin spesifik informasi yang Anda berikan, semakin tepat rekomendasi yang dapat saya berikan.',
           isUser: false
-        }]);
+        };
+        setMessages(prev => [...prev, startupQuestion]);
+        setConversationHistory(prev => [...prev, { role: 'assistant', content: startupQuestion.text }]);
       }, 2000);
     }
   };
@@ -402,11 +423,12 @@ const Chatbot = () => {
       
       console.log('Relevant categories detected:', categories);
       
-      // Use DeepSeek service with the combined knowledge base
+      // Kirim riwayat percakapan ke API untuk konteks
       const aiResponse = await deepseekService.getResponse(
         query, 
         categories.join(', '), 
-        content
+        content,
+        conversationHistory // Mengirim riwayat percakapan ke API
       );
       
       return {
@@ -434,12 +456,14 @@ const Chatbot = () => {
     setUserName('');
     setUserBusiness('');
     setConversationStage('asking_name');
-    setMessages([
-      {
-        text: 'Informasi pengguna telah direset. Boleh saya tahu nama Anda?',
-        isUser: false,
-      },
-    ]);
+    
+    const resetMessage = {
+      text: 'Informasi pengguna telah direset. Boleh saya tahu nama Anda?',
+      isUser: false,
+    };
+    
+    setMessages([resetMessage]);
+    setConversationHistory([{ role: 'assistant', content: resetMessage.text }]);
   };
 
   return (
