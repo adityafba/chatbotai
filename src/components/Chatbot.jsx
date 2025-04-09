@@ -175,13 +175,15 @@ const Chatbot = () => {
       setUserBusiness(savedUserBusiness);
     }
     
-    // Only set welcome message if messages is empty
+    // Check if we already have messages to prevent duplicate welcome messages
     if (messages.length === 0) {
+      // Initialize messages array with welcome message
       const welcomeMessage = {
         text: 'Selamat datang di Chatbot Interaktif! Saya di sini untuk membantu Anda dengan rekomendasi bisnis yang personal.',
         isUser: false,
       };
       
+      // Set initial messages and conversation history
       setMessages([welcomeMessage]);
       setConversationHistory([{ role: 'assistant', content: welcomeMessage.text }]);
       
@@ -208,7 +210,7 @@ const Chatbot = () => {
           setConversationStage('asking_business');
         }, 1000);
       } else {
-        // If we have all user info
+        // If we have all user info, only add one ready message
         setTimeout(() => {
           const readyMessage = {
             text: `Senang bertemu kembali, ${savedUserName}! Apa yang ingin Anda ketahui tentang bisnis ${savedUserBusiness} Anda hari ini?`,
@@ -220,7 +222,7 @@ const Chatbot = () => {
         }, 1000);
       }
     }
-  }, []);
+  }, []); // Empty dependency array ensures this only runs once
 
   // Extract just the name from user input
   const extractName = (input) => {
