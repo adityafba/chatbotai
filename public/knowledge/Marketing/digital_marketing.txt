@@ -1,0 +1,15 @@
+Digital Marketing adalah strategi pemasaran yang menggunakan media digital seperti internet, media sosial, dan perangkat mobile untuk menjangkau konsumen.
+
+Beberapa jenis Digital Marketing:
+1. Search Engine Optimization (SEO): Strategi untuk meningkatkan peringkat website di mesin pencari.
+2. Content Marketing: Membuat dan mendistribusikan konten yang relevan dan bermanfaat untuk menarik audiens.
+3. Social Media Marketing: Menggunakan platform media sosial untuk mempromosikan produk atau layanan.
+4. Email Marketing: Mengirimkan pesan komersial melalui email kepada daftar pelanggan.
+5. Pay-Per-Click (PPC): Metode iklan online di mana pengiklan membayar setiap kali iklan mereka diklik.
+
+Tips Digital Marketing yang efektif:
+- Tentukan target audiens dengan jelas
+- Buat konten yang relevan dan berkualitas
+- Optimalkan website untuk SEO
+- Gunakan analitik untuk mengukur kinerja kampanye
+- Tetap update dengan tren terbaru di industri digital marketing
