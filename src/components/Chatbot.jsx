@@ -364,23 +364,78 @@ const Chatbot = () => {
   };
 
   const personalizeResponse = (text) => {
-    // Personalize response with user's name and business if available
-    let personalizedText = text;
+    if (!text) return text;
     
+    let personalized = text;
+    
+    // Replace generic terms with user's name if available
     if (userName) {
-      // Replace generic terms with personalized ones
-      personalizedText = personalizedText.replace(/Anda dapat/g, `${userName} dapat`);
-      personalizedText = personalizedText.replace(/Anda harus/g, `${userName} sebaiknya`);
-      personalizedText = personalizedText.replace(/Anda perlu/g, `${userName} perlu`);
+      personalized = personalized
+        .replace(/pengguna/gi, userName)
+        .replace(/pelanggan/gi, userName)
+        .replace(/klien/gi, userName);
+      
+      // Add personalized greeting if the response starts with generic greetings
+      if (
+        personalized.match(/^(halo|hai|selamat|terima kasih)/i) && 
+        !personalized.toLowerCase().includes(userName.toLowerCase())
+      ) {
+        personalized = personalized.replace(/^(halo|hai|selamat|terima kasih)/i, `$1 ${userName}`);
+      }
     }
     
+    // Add business context to recommendations if available
     if (userBusiness) {
-      // Add specific business context to recommendations
-      personalizedText = personalizedText.replace(/bisnis Anda/g, `bisnis ${userBusiness} Anda`);
-      personalizedText = personalizedText.replace(/perusahaan Anda/g, `${userBusiness} Anda`);
+      // Replace generic business terms with user's specific business
+      personalized = personalized
+        .replace(/bisnis anda/gi, `bisnis ${userBusiness} Anda`)
+        .replace(/perusahaan anda/gi, `${userBusiness} Anda`)
+        .replace(/usaha anda/gi, `usaha ${userBusiness} Anda`);
+      
+      // Look for recommendation patterns and add business context
+      if (personalized.includes('rekomendasi') || personalized.includes('saran') || personalized.includes('tips')) {
+        // Only add business type if not already mentioned in the same sentence
+        const sentences = personalized.split(/[.!?]+/);
+        personalized = sentences.map(sentence => {
+          if ((sentence.includes('rekomendasi') || sentence.includes('saran') || sentence.includes('tips')) && 
+              !sentence.toLowerCase().includes(userBusiness.toLowerCase())) {
+            return sentence.replace(/(rekomendasi|saran|tips)/i, `$1 untuk bisnis ${userBusiness}`);
+          }
+          return sentence;
+        }).join('. ');
+      }
     }
     
-    return personalizedText;
+    // Enhance contextual awareness by referencing previous conversation
+    if (conversationHistory.length > 2) {
+      // Get the last user message before the current one
+      const previousUserMessages = conversationHistory
+        .filter(msg => msg.role === 'user')
+        .slice(-2, -1);
+      
+      // If there's a topic change, acknowledge it
+      if (previousUserMessages.length > 0) {
+        const prevTopic = previousUserMessages[0].content.toLowerCase();
+        const currentTopic = conversationHistory[conversationHistory.length - 1].content.toLowerCase();
+        
+        // Simple topic change detection - if key terms don't overlap
+        const prevTerms = prevTopic.split(' ').filter(word => word.length > 4);
+        const currentTerms = currentTopic.split(' ').filter(word => word.length > 4);
+        const hasCommonTerms = prevTerms.some(term => currentTerms.includes(term));
+        
+        // If it seems like a topic change and response doesn't already acknowledge it
+        if (!hasCommonTerms && 
+            !personalized.includes('Mengenai pertanyaan baru Anda') && 
+            !personalized.includes('Beralih ke topik')) {
+          // Add a transition phrase at the beginning if the response doesn't already have one
+          if (!personalized.match(/^(mengenai|terkait|tentang|untuk)/i)) {
+            personalized = `Mengenai pertanyaan Anda tentang ${currentTerms.slice(0, 3).join(' ')}... ${personalized}`;
+          }
+        }
+      }
+    }
+    
+    return personalized;
   };
 
   const checkForFollowUpQuestions = (userQuery) => {
@@ -418,17 +473,48 @@ const Chatbot = () => {
     try {
       console.log('Using smart category detection for query:', query);
       
+      // Enhance query with conversation context if available
+      let enhancedQuery = query;
+      
+      // Add business context to the query if available
+      if (userBusiness) {
+        // Only add business context if not already mentioned in the query
+        if (!query.toLowerCase().includes(userBusiness.toLowerCase())) {
+          enhancedQuery = `${query} (Konteks: Bisnis saya adalah ${userBusiness})`;
+        }
+      }
+      
+      // Add context from recent conversation if it seems like a follow-up question
+      const isLikelyFollowUp = query.length < 50 && 
+        !query.includes('?') && 
+        conversationHistory.length >= 2;
+      
+      if (isLikelyFollowUp) {
+        // Get the last AI response to provide context
+        const lastAIResponse = conversationHistory
+          .filter(msg => msg.role === 'assistant')
+          .pop();
+        
+        if (lastAIResponse) {
+          // Extract a brief context from the last AI response (first 100 chars)
+          const contextSnippet = lastAIResponse.content.substring(0, 100).replace(/\n/g, ' ');
+          enhancedQuery = `${query} (Ini adalah pertanyaan lanjutan terkait respons terakhir Anda tentang: "${contextSnippet}...")`;
+        }
+      }
+      
+      console.log('Enhanced query with context:', enhancedQuery);
+      
       // Use the new loadRelevantKnowledgeBase function
-      const { content, categories } = await knowledgeBaseUtils.loadRelevantKnowledgeBase(query);
+      const { content, categories } = await knowledgeBaseUtils.loadRelevantKnowledgeBase(enhancedQuery);
       
       console.log('Relevant categories detected:', categories);
       
-      // Kirim riwayat percakapan ke API untuk konteks
+      // Send conversation history to API for context
       const aiResponse = await deepseekService.getResponse(
-        query, 
+        enhancedQuery, 
         categories.join(', '), 
         content,
-        conversationHistory // Mengirim riwayat percakapan ke API
+        conversationHistory // Send conversation history to API
       );
       
       return {
