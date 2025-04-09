@@ -92,6 +92,24 @@ const StatItem = styled.div`
   margin-bottom: 0.3rem;
 `;
 
+const CategoryTag = styled.span`
+  display: inline-block;
+  background-color: #e0f7fa;
+  color: #00838f;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+`;
+
+const UsedCategoriesContainer = styled.div`
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+`;
+
 const Chatbot = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -104,6 +122,7 @@ const Chatbot = () => {
       return acc;
     }, {})
   );
+  const [usedCategories, setUsedCategories] = useState([]);
   
   const chatBodyRef = useRef(null);
 
@@ -125,7 +144,7 @@ const Chatbot = () => {
     if (messages.length === 0) {
       setMessages([
         {
-          text: 'Selamat datang di Chatbot Interaktif! Silakan pilih kategori untuk memulai percakapan.',
+          text: 'Selamat datang di Chatbot Interaktif! Silakan pilih kategori untuk memulai percakapan atau langsung ajukan pertanyaan untuk mendapatkan rekomendasi bisnis dari basis pengetahuan kami.',
           isUser: false,
         },
       ]);
@@ -133,7 +152,7 @@ const Chatbot = () => {
   }, []);
 
   const handleSendMessage = async () => {
-    if (input.trim() === '' || !selectedCategory) return;
+    if (input.trim() === '') return;
 
     // Add user message
     const userMessage = { text: input, isUser: true };
@@ -141,26 +160,92 @@ const Chatbot = () => {
     setInput('');
     setIsLoading(true);
 
-    // Update category stats
-    setCategoryStats((prev) => ({
-      ...prev,
-      [selectedCategory]: prev[selectedCategory] + 1,
-    }));
-
     try {
-      // Simulate AI processing time
-      setTimeout(async () => {
-        const response = await fetchResponse(input, selectedCategory);
-        setMessages((prev) => [...prev, { text: response, isUser: false }]);
-        setIsLoading(false);
-      }, 1000);
+      // If no category is selected, use the smart category detection
+      if (!selectedCategory) {
+        const response = await fetchResponseWithSmartCategoryDetection(input);
+        setMessages((prev) => [...prev, { 
+          text: response.text, 
+          isUser: false,
+          categories: response.categories 
+        }]);
+        
+        // Update used categories
+        setUsedCategories(prev => {
+          const newCategories = [...prev];
+          response.categories.forEach(cat => {
+            if (!newCategories.includes(cat)) {
+              newCategories.push(cat);
+            }
+          });
+          return newCategories;
+        });
+        
+        // Update category stats
+        const updatedStats = {...categoryStats};
+        response.categories.forEach(category => {
+          updatedStats[category] = (updatedStats[category] || 0) + 1;
+        });
+        setCategoryStats(updatedStats);
+      } else {
+        // Update category stats for selected category
+        setCategoryStats((prev) => ({
+          ...prev,
+          [selectedCategory]: prev[selectedCategory] + 1,
+        }));
+        
+        // Use the selected category
+        setTimeout(async () => {
+          const response = await fetchResponse(input, selectedCategory);
+          setMessages((prev) => [...prev, { 
+            text: response, 
+            isUser: false,
+            categories: [selectedCategory]
+          }]);
+          
+          // Update used categories if not already included
+          if (!usedCategories.includes(selectedCategory)) {
+            setUsedCategories(prev => [...prev, selectedCategory]);
+          }
+        }, 500);
+      }
     } catch (error) {
       console.error('Error fetching response:', error);
       setMessages((prev) => [
         ...prev,
         { text: 'Maaf, terjadi kesalahan. Silakan coba lagi.', isUser: false },
       ]);
+    } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchResponseWithSmartCategoryDetection = async (query) => {
+    try {
+      console.log('Using smart category detection for query:', query);
+      
+      // Use the new loadRelevantKnowledgeBase function
+      const { content, categories } = await knowledgeBaseUtils.loadRelevantKnowledgeBase(query);
+      
+      console.log('Relevant categories detected:', categories);
+      
+      // Use DeepSeek service with the combined knowledge base
+      const aiResponse = await deepseekService.getResponse(
+        query, 
+        categories.join(', '), 
+        content
+      );
+      
+      return {
+        text: aiResponse,
+        categories
+      };
+    } catch (error) {
+      console.error('Error in smart category detection:', error);
+      return {
+        text: "Maaf, terjadi kesalahan saat mencari informasi. Silakan coba lagi nanti.",
+        categories: []
+      };
     }
   };
 
@@ -169,7 +254,7 @@ const Chatbot = () => {
       // Load knowledge base content for the selected category
       const knowledgeBaseContent = await knowledgeBaseUtils.loadKnowledgeBase(category);
       
-      // Use DeepSeek service which now has mock responses built in
+      // Use DeepSeek service
       const aiResponse = await deepseekService.getResponse(query, category, knowledgeBaseContent);
       return aiResponse;
     } catch (error) {
@@ -206,7 +291,16 @@ const Chatbot = () => {
       
       <ChatBody ref={chatBodyRef}>
         {messages.map((message, index) => (
-          <ChatBubble key={index} message={message.text} isUser={message.isUser} />
+          <React.Fragment key={index}>
+            <ChatBubble message={message.text} isUser={message.isUser} />
+            {!message.isUser && message.categories && message.categories.length > 0 && (
+              <UsedCategoriesContainer>
+                {message.categories.map(cat => (
+                  <CategoryTag key={cat}>{cat}</CategoryTag>
+                ))}
+              </UsedCategoriesContainer>
+            )}
+          </React.Fragment>
         ))}
         {isLoading && <ChatBubble message="Sedang mengetik..." isUser={false} />}
       </ChatBody>
@@ -218,11 +312,10 @@ const Chatbot = () => {
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Ketik pesan Anda di sini..."
-          disabled={!selectedCategory}
         />
         <SendButton 
           onClick={handleSendMessage} 
-          disabled={!selectedCategory || input.trim() === '' || isLoading}
+          disabled={input.trim() === '' || isLoading}
         >
           Kirim
         </SendButton>
@@ -230,12 +323,15 @@ const Chatbot = () => {
       
       <ChatStats>
         <StatsTitle>Statistik Percakapan</StatsTitle>
-        {Object.entries(categoryStats).map(([category, count]) => (
-          <StatItem key={category}>
-            <span>{category}:</span>
-            <span>{count} pesan</span>
-          </StatItem>
-        ))}
+        {Object.entries(categoryStats)
+          .filter(([_, count]) => count > 0)
+          .sort(([_, countA], [__, countB]) => countB - countA)
+          .map(([category, count]) => (
+            <StatItem key={category}>
+              <span>{category}:</span>
+              <span>{count} pesan</span>
+            </StatItem>
+          ))}
       </ChatStats>
       
       {/* API Status indicator - no input needed */}

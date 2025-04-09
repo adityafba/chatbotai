@@ -14,17 +14,34 @@ const generateFallbackResponse = (query, category, knowledgeBase) => {
   // Find paragraphs in knowledge base that contain query keywords
   const paragraphs = knowledgeBase.split('\n\n');
   
+  // First pass: Look for paragraphs with exact matches to important keywords
   for (const paragraph of paragraphs) {
     const paragraphLower = paragraph.toLowerCase();
-    if (words.some(word => paragraphLower.includes(word))) {
+    // Check if paragraph contains multiple keywords for better relevance
+    const matchCount = words.filter(word => paragraphLower.includes(word)).length;
+    
+    if (matchCount >= 2 || (words.length === 1 && matchCount === 1)) {
       relevantContent += paragraph + '\n\n';
-      if (relevantContent.length > 500) break;
+      if (relevantContent.length > 800) break;
+    }
+  }
+  
+  // Second pass: If not enough content, look for paragraphs with at least one keyword
+  if (relevantContent.length < 300 && words.length > 0) {
+    for (const paragraph of paragraphs) {
+      if (relevantContent.includes(paragraph)) continue; // Skip already included paragraphs
+      
+      const paragraphLower = paragraph.toLowerCase();
+      if (words.some(word => paragraphLower.includes(word))) {
+        relevantContent += paragraph + '\n\n';
+        if (relevantContent.length > 800) break;
+      }
     }
   }
   
   // If no relevant content found, use the first part of the knowledge base
   if (!relevantContent && knowledgeBase.length > 0) {
-    relevantContent = knowledgeBase.substring(0, Math.min(500, knowledgeBase.length));
+    relevantContent = knowledgeBase.substring(0, Math.min(800, knowledgeBase.length));
   }
   
   // Create a structured response based on the knowledge base
@@ -57,19 +74,21 @@ const getResponse = async (query, category, knowledgeBase) => {
       messages: [
         {
           role: 'system',
-          content: `Anda adalah asisten AI yang ahli dalam bidang ${category}. Jawaban Anda harus SELALU berdasarkan informasi dari basis pengetahuan yang diberikan, kemudian kembangkan dengan pengetahuan umum Anda untuk memberikan jawaban yang komprehensif.
+          content: `Anda adalah asisten AI yang ahli dalam bidang bisnis, khususnya ${category}. Jawaban Anda harus SELALU berdasarkan informasi dari basis pengetahuan yang diberikan, kemudian kembangkan dengan pengetahuan umum Anda untuk memberikan jawaban yang komprehensif.
 
 Basis pengetahuan: ${knowledgeBase}
 
 Panduan:
-1. UTAMAKAN informasi dari basis pengetahuan sebagai sumber utama jawaban Anda.
+1. UTAMAKAN informasi dari basis pengetahuan sebagai sumber utama jawaban Anda. Jangan memberikan informasi yang bertentangan dengan basis pengetahuan.
 2. Kembangkan jawaban dengan pengetahuan umum Anda tentang ${category} untuk membuat jawaban lebih komprehensif.
 3. Berikan contoh praktis, studi kasus, dan statistik yang relevan untuk mendukung jawaban.
 4. Strukturkan jawaban dengan heading, sub-heading, poin-poin, dan paragraf yang jelas.
 5. Gunakan format yang mudah dibaca seperti bullet points, numbering, dan penekanan pada kata kunci.
 6. Berikan minimal 3-5 poin utama dalam jawaban Anda.
-7. Berikan kesimpulan dan rekomendasi praktis di akhir jawaban.
-8. Jawaban harus detail, informatif, dan bermanfaat bagi pengguna.`
+7. Berikan kesimpulan dan rekomendasi praktis di akhir jawaban yang dapat langsung diterapkan oleh pengguna.
+8. Jawaban harus detail, informatif, dan bermanfaat bagi pengguna bisnis.
+9. Sertakan tips implementasi dan langkah-langkah konkret yang dapat diambil pengguna.
+10. Jika relevan, berikan contoh sukses dari bisnis yang menerapkan konsep yang dibahas.`
         },
         {
           role: 'user',
